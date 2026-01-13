@@ -14,10 +14,9 @@ resource "google_compute_instance_template" "gpu" {
   }
 
   network_interface {
-    network = "default"
-    access_config {
-      # Ephemeral public IP
-    }
+    subnetwork         = values(google_compute_subnetwork.private)[0].self_link
+    stack_type         = "IPV4_ONLY"
+    queue_count        = 0
   }
 
   scheduling {
@@ -29,7 +28,9 @@ resource "google_compute_instance_template" "gpu" {
     count = var.gpu_count
   }
 
-  tags = ["gpu-instance", "http-server", "https-server"]
+  tags = ["gpu-instance", "http-server", "https-server", "app-backend"]
+
+  labels = var.labels
 
   lifecycle {
     create_before_destroy = true

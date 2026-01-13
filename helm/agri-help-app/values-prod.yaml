@@ -1,0 +1,337 @@
+# ============================================================================
+# AgriBot Ethiopia - Production Environment Values
+# Optimized for production with high availability and security
+# ============================================================================
+
+global:
+  environment: production
+  domain: agri-help.com
+
+# ============================================================================
+# Backend Service
+# ============================================================================
+backend:
+  replicaCount: 3
+  
+  ingress:
+    enabled: true
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/rate-limit: "1000"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    hosts:
+      - host: api.agri-help.com
+        paths:
+          - path: /
+            pathType: Prefix
+      - host: api-backup.agri-help.com
+        paths:
+          - path: /
+            pathType: Prefix
+  
+  resources:
+    requests:
+      cpu: 1500m
+      memory: 3Gi
+      nvidia.com/gpu: "1"
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+      nvidia.com/gpu: "1"
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+  
+  env:
+    - name: ENVIRONMENT
+      value: production
+    - name: LOG_LEVEL
+      value: warning
+    - name: WORKERS
+      value: "8"
+
+# ============================================================================
+# Frontend Service
+# ============================================================================
+frontend:
+  replicaCount: 3
+  
+  ingress:
+    enabled: true
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/rate-limit: "5000"
+    hosts:
+      - host: agri-help.com
+        paths:
+          - path: /
+            pathType: Prefix
+      - host: www.agri-help.com
+        paths:
+          - path: /
+            pathType: Prefix
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 1.5Gi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 75
+  
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+# ============================================================================
+# OAN UI Service
+# ============================================================================
+oanUI:
+  replicaCount: 2
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# ============================================================================
+# Transcribe Service
+# ============================================================================
+transcribeService:
+  replicaCount: 2
+  
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+      nvidia.com/gpu: "1"
+    limits:
+      cpu: 1500m
+      memory: 3Gi
+      nvidia.com/gpu: "1"
+
+# ============================================================================
+# PostgreSQL Configuration (Highly Available)
+# ============================================================================
+postgresql:
+  enabled: true
+  
+  primary:
+    persistence:
+      enabled: true
+      size: 100Gi
+      storageClassName: fast-ssd
+    
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+  
+  replica:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 100Gi
+  
+  backup:
+    enabled: true
+    schedule: "0 * * * *"  # Hourly
+
+# ============================================================================
+# Redis Configuration (High Availability)
+# ============================================================================
+redis:
+  enabled: true
+  
+  architecture: replication
+  
+  master:
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClassName: fast-ssd
+    
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+  
+  replica:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 50Gi
+  
+  sentinel:
+    enabled: true
+    quorum: 2
+
+# ============================================================================
+# Qdrant Vector Database (High Availability)
+# ============================================================================
+qdrant:
+  enabled: true
+  
+  replicaCount: 3
+  
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClassName: fast-ssd
+  
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+# ============================================================================
+# Network Policies (Strict)
+# ============================================================================
+networkPolicy:
+  enabled: true
+  
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 3000
+
+# ============================================================================
+# Pod Security Policy (Restricted)
+# ============================================================================
+podSecurityPolicy:
+  enabled: true
+  name: restricted
+
+# ============================================================================
+# RBAC
+# ============================================================================
+rbac:
+  create: true
+  serviceAccount:
+    create: true
+    name: agri-help-prod
+
+# ============================================================================
+# Monitoring and Observability (Full)
+# ============================================================================
+monitoring:
+  enabled: true
+  
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+  
+  prometheusRule:
+    enabled: true
+    
+    # Alert rules
+    rules:
+      - alert: HighErrorRate
+        expr: rate(requests_errors_total[5m]) > 0.05
+        for: 5m
+        annotations:
+          summary: High error rate detected
+      
+      - alert: PodMemoryUsage
+        expr: container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.9
+        for: 2m
+        annotations:
+          summary: High memory usage
+
+# ============================================================================
+# Backup and Disaster Recovery
+# ============================================================================
+backup:
+  enabled: true
+  
+  schedule: "0 * * * *"  # Hourly
+  retention: 90  # days
+  
+  postgresql:
+    enabled: true
+    storageClass: archive-storage
+    size: 200Gi
+  
+  velero:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+
+# ============================================================================
+# Logging and Auditing
+# ============================================================================
+logging:
+  enabled: true
+  
+  fluentd:
+    enabled: true
+    buffer:
+      type: file
+      path: /var/log/fluentd-buffers/kubernetes.system.log.pos
+      flush_interval: 5s
+  
+  # Audit logging
+  audit:
+    enabled: true
+    log_retention_days: 90
+
+# ============================================================================
+# Node Affinity (Production nodes)
+# ============================================================================
+nodeSelector:
+  workload: production
+  kubernetes.io/os: linux
+
+# ============================================================================
+# Tolerations (Tainted nodes)
+# ============================================================================
+tolerations:
+  - key: production
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+# ============================================================================
+# Features
+# ============================================================================
+features:
+  gpu:
+    enabled: true
+  tracing:
+    enabled: true
+    jaeger:
+      endpoint: "http://jaeger:14268/api/traces"
+  keda:
+    enabled: true

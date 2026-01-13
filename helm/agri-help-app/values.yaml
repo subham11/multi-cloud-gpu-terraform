@@ -1,0 +1,539 @@
+# ============================================================================
+# AgriBot Ethiopia - Helm Chart Values
+# Default values with sensible production-ready defaults
+# Override with environment-specific values files (values-dev.yaml, etc.)
+# ============================================================================
+
+# ============================================================================
+# Global Configuration
+# ============================================================================
+global:
+  environment: production
+  domain: agri-help.local
+  
+  # Image pull secrets for private registries
+  imagePullSecrets:
+    - name: docker-secret
+  
+  # Annotations to apply to all resources
+  annotations:
+    prometheus.io/scrape: "true"
+    monitoring.coreos.com/enabled: "true"
+  
+  # Labels to apply to all resources
+  labels:
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+# ============================================================================
+# Backend Service (FastAPI RAG Engine)
+# ============================================================================
+backend:
+  enabled: true
+  
+  # Container image
+  image:
+    repository: sulopatech/agri-help-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  
+  # Replica configuration
+  replicaCount: 2
+  
+  # Service configuration
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+    annotations: {}
+    labels: {}
+  
+  # Ingress configuration
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: api.agri-help.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: agri-help-backend-tls
+        hosts:
+          - api.agri-help.local
+  
+  # Resource requests and limits
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+      nvidia.com/gpu: "1"
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+      nvidia.com/gpu: "1"
+  
+  # Autoscaling
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  
+  # Liveness and readiness probes
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 2
+  
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+  
+  # Environment variables
+  env:
+    - name: ENVIRONMENT
+      value: production
+    - name: LOG_LEVEL
+      value: info
+    - name: WORKERS
+      value: "4"
+  
+  # Secret environment variables
+  envFrom:
+    - secretRef:
+        name: backend-secrets
+    - configMapRef:
+        name: backend-config
+  
+  # Volume mounts
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    - name: cache
+      mountPath: /var/cache/app
+  
+  # Node affinity
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                    - backend
+            topologyKey: kubernetes.io/hostname
+
+# ============================================================================
+# Frontend Service (Next.js Application)
+# ============================================================================
+frontend:
+  enabled: true
+  
+  image:
+    repository: sulopatech/agri-help-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  
+  replicaCount: 2
+  
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+  
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: agri-help.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: agri-help-frontend-tls
+        hosts:
+          - agri-help.local
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 75
+  
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+
+# ============================================================================
+# OAN UI Service
+# ============================================================================
+oanUI:
+  enabled: true
+  
+  image:
+    repository: sulopatech/oan-ui-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  
+  replicaCount: 1
+  
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8081
+    targetPort: 8081
+  
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: oan-ui.agri-help.local
+        paths:
+          - path: /
+            pathType: Prefix
+  
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ============================================================================
+# Transcribe Service
+# ============================================================================
+transcribeService:
+  enabled: true
+  
+  image:
+    repository: sulopatech/transcribe-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  
+  replicaCount: 1
+  
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8090
+    targetPort: 8090
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+      nvidia.com/gpu: "1"
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+      nvidia.com/gpu: "1"
+
+# ============================================================================
+# PostgreSQL Configuration
+# ============================================================================
+postgresql:
+  enabled: true
+  
+  # Bitnami PostgreSQL chart values
+  global:
+    postgresql:
+      auth:
+        username: agri_user
+        password: "changeme"
+        database: agri_chatbot
+  
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClassName: "standard"
+    
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+  
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+# ============================================================================
+# Redis Configuration
+# ============================================================================
+redis:
+  enabled: true
+  
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+    
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  
+  replica:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      size: 5Gi
+  
+  metrics:
+    enabled: true
+
+# ============================================================================
+# Qdrant Vector Database Configuration
+# ============================================================================
+qdrant:
+  enabled: true
+  
+  replicaCount: 1
+  
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClassName: "standard"
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  
+  config:
+    api_key: "changeme"
+    read_only: false
+
+# ============================================================================
+# ConfigMap Data
+# ============================================================================
+configMap:
+  # Backend configuration
+  OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1"
+  QDRANT_HOST: "qdrant"
+  QDRANT_PORT: "6333"
+  REDIS_HOST: "redis-master"
+  REDIS_PORT: "6379"
+  DB_HOST: "postgresql"
+  DB_PORT: "5432"
+  DB_NAME: "agri_chatbot"
+
+# ============================================================================
+# Secrets
+# ============================================================================
+secrets:
+  # Create secrets from values (recommended: use sealed-secrets or external-secrets)
+  create: false
+  
+  # Secret data (use external secret management in production)
+  data:
+    OPENROUTER_API_KEY: "your-api-key"
+    AWS_ACCESS_KEY_ID: "your-key"
+    AWS_SECRET_ACCESS_KEY: "your-secret"
+    BEDROCK_MODEL_ID: "meta.llama3-70b-instruct-v1:0"
+
+# ============================================================================
+# Ingress Configuration
+# ============================================================================
+ingress:
+  enabled: true
+  className: nginx
+  
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+
+# ============================================================================
+# Network Policies
+# ============================================================================
+networkPolicy:
+  enabled: true
+  
+  # Ingress rules
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 3000
+  
+  # Egress rules
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+# ============================================================================
+# Pod Security Policy
+# ============================================================================
+podSecurityPolicy:
+  enabled: true
+  name: restricted
+
+# ============================================================================
+# RBAC Configuration
+# ============================================================================
+rbac:
+  create: true
+  
+  # Service account
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: agri-help
+
+# ============================================================================
+# Monitoring and Observability
+# ============================================================================
+monitoring:
+  enabled: true
+  
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+  
+  prometheusRule:
+    enabled: true
+    namespace: monitoring
+
+# ============================================================================
+# Backup Configuration
+# ============================================================================
+backup:
+  enabled: true
+  
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention: 30  # days
+  
+  postgresql:
+    enabled: true
+    storageClass: standard
+    size: 20Gi
+
+# ============================================================================
+# Logs and Auditing
+# ============================================================================
+logging:
+  enabled: true
+  
+  fluentd:
+    enabled: true
+    image: fluent/fluentd-kubernetes-daemonset:v1-debian-elasticsearch
+
+# ============================================================================
+# Feature Flags
+# ============================================================================
+features:
+  # Enable GPU support
+  gpu:
+    enabled: true
+  
+  # Enable distributed tracing
+  tracing:
+    enabled: false
+    jaeger:
+      endpoint: "http://jaeger:14268/api/traces"
+  
+  # Enable keda for advanced autoscaling
+  keda:
+    enabled: false
+
+# ============================================================================
+# Node Selection
+# ============================================================================
+nodeSelector: {}
+  # gpu: "true"
+  # workload: compute
+
+tolerations: []
+  # - key: gpu
+  #   operator: Equal
+  #   value: "true"
+  #   effect: NoSchedule

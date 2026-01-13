@@ -1,0 +1,92 @@
+apiVersion: v2
+name: agri-help-app
+description: >
+  Helm chart for AgriBot Ethiopia - A comprehensive RAG-based agricultural
+  chatbot application with FastAPI backend, Next.js frontend, and AI services.
+  Provides intelligent agricultural advisory through multiple interfaces.
+
+type: application
+
+version: 1.0.0
+appVersion: "1.0.0"
+
+# Chart and application metadata
+home: https://github.com/Sulopatech/agri_help
+sources:
+  - https://github.com/Sulopatech/agri_help
+documentation: https://github.com/Sulopatech/agri_help/blob/main/README.md
+
+# Maintainers
+maintainers:
+  - name: DevOps Team
+    email: devops@example.com
+    url: https://github.com/Sulopatech
+
+# Keywords for searching
+keywords:
+  - agriculture
+  - chatbot
+  - rag
+  - fastapi
+  - next.js
+  - kubernetes
+  - machine-learning
+  - gpu
+
+# Chart categories
+kubeVersion: ">=1.20.0"
+categories:
+  - application
+  - web
+  - database
+
+# Chart dependencies
+dependencies:
+  # PostgreSQL database
+  - name: postgresql
+    version: "12.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    alias: postgresql
+    condition: postgresql.enabled
+    tags: []
+    import-values:
+      - child: auth
+        parent: postgresqlAuth
+
+  # Redis cache
+  - name: redis
+    version: "17.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    alias: redis
+    condition: redis.enabled
+
+  # Qdrant vector database
+  - name: qdrant
+    version: "0.x.x"
+    repository: "https://qdrant.tech/helm"
+    alias: qdrant
+    condition: qdrant.enabled
+
+# Chart metadata
+icon: https://raw.githubusercontent.com/Sulopatech/agri_help/main/docs/logo.png
+deprecated: false
+annotations:
+  # Artifact Hub annotations
+  artifacthub.io/changes: |
+    - version: 1.0.0
+      changes:
+        - Initial release
+        - Multi-tier deployment support
+        - Security hardening
+        - GPU acceleration support
+  
+  artifacthub.io/containsSecurityUpdates: "false"
+  
+  artifacthub.io/license: MIT
+  
+  # Deployment annotations
+  deployment.kubernetes.io/revision: "1"
+  
+  # Security annotations
+  security.agri-help.local/reviewed: "true"
+  security.agri-help.local/scan-date: "2024-01-13"

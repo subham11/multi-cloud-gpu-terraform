@@ -183,3 +183,9 @@ variable "common_tags" {
     Project     = "multi-cloud-gpu"
   }
 }
+
+variable "allowed_ssh_cidrs" {
+  description = "CIDR blocks allowed for SSH/admin access"
+  type        = list(string)
+  default     = ["10.0.0.0/8"]
+}

@@ -27,6 +27,9 @@ module "aws" {
   user_data_script = module.common.cloud_init_script
   git_username     = var.git_username
   git_password     = var.git_password
+  allowed_ssh_cidrs = var.allowed_ssh_cidrs
+  tags             = local.common_tags
+  environment      = var.environment
 }
 
 # ============================================================================
@@ -42,6 +45,9 @@ module "azure" {
   vm_size          = "Standard_NV36ads_A10_v5"
   user_data_script = module.common.cloud_init_script
   ssh_public_key   = var.azure_ssh_public_key != null ? var.azure_ssh_public_key : "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC3F... replace-with-your-key"
+  allowed_ssh_cidrs = var.allowed_ssh_cidrs
+  tags             = local.common_tags
+  environment      = var.environment
 }
 
 # ============================================================================
@@ -59,4 +65,5 @@ module "gcp" {
   gpu_type         = "nvidia-l4"
   gpu_count        = 1
   user_data_script = module.common.cloud_init_script
+  allowed_ssh_cidrs = var.allowed_ssh_cidrs
 }

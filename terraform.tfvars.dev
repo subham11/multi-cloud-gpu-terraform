@@ -1,0 +1,66 @@
+# Development Environment Configuration
+# This file contains variable values for the development environment
+
+# ============================================================================
+# Cloud Provider Configuration
+# ============================================================================
+cloud_provider = "aws"  # Options: aws, azure, gcp
+region         = "us-east-1"
+
+# ============================================================================
+# Environment Configuration
+# ============================================================================
+environment = "development"
+vm_name     = "gpu-dev"
+
+# ============================================================================
+# Resource Configuration
+# ============================================================================
+# Development uses minimal resources to save costs
+instance_count      = 1
+enable_autoscaling  = false
+enable_monitoring   = false  # Basic monitoring only
+enable_backups      = false  # No backups in dev
+
+# ============================================================================
+# Tags for Cost Allocation and Management
+# ============================================================================
+tags = {
+  Environment    = "development"
+  Project        = "digital-public-goods"
+  ManagedBy      = "terraform"
+  CostCenter     = "engineering"
+  Owner          = "devops-team"
+  Application    = "agri-help"
+  Lifecycle      = "development"
+  AutoShutdown   = "enabled"  # Shutdown after hours
+  BackupPolicy   = "none"
+  SecurityLevel  = "low"
+}
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+vpc_cidr           = "10.0.0.0/16"
+public_subnet_cidr = "10.0.1.0/24"
+enable_nat_gateway = false  # No NAT gateway in dev
+
+# ============================================================================
+# Security Configuration
+# ============================================================================
+allowed_ssh_cidrs = ["0.0.0.0/0"]  # Allow SSH from anywhere in dev
+enable_ssl        = false          # No SSL in dev
+
+# ============================================================================
+# GCP Specific (if using GCP)
+# ============================================================================
+# gcp_project_id = "your-project-dev"
+
+# ============================================================================
+# Notes
+# ============================================================================
+# - Development environment uses single instance for cost savings
+# - No auto-scaling or high availability
+# - Minimal monitoring and logging
+# - Resources can be destroyed when not in use
+# - Estimated monthly cost: $200-400 (depending on GPU usage)

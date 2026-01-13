@@ -1,13 +1,5 @@
-# ============================================================================
-# AWS Remote Backend Configuration
-# This file demonstrates how to configure Terraform state storage in AWS S3
-# with state locking via DynamoDB
-# ============================================================================
-
-# To use this backend configuration:
-# 1. Uncomment the terraform block below
-# 2. Create S3 bucket and DynamoDB table (see instructions below)
-# 3. Update bucket and region names
+# Note: Do not keep multiple active backend blocks. Use this file as a template
+# and configure via terraform init -backend-config=backends/aws-backend.hcl
 # 4. Run: terraform init
 
 # ============================================================================

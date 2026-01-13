@@ -1,0 +1,76 @@
+# Staging Environment Configuration
+# This file contains variable values for the staging environment
+
+# ============================================================================
+# Cloud Provider Configuration
+# ============================================================================
+cloud_provider = "azure"  # Options: aws, azure, gcp
+region         = "eastus"
+
+# ============================================================================
+# Environment Configuration
+# ============================================================================
+environment = "staging"
+vm_name     = "gpu-staging"
+
+# ============================================================================
+# Resource Configuration
+# ============================================================================
+# Staging mimics production but with fewer resources
+instance_count      = 2
+enable_autoscaling  = true
+min_instances       = 2
+max_instances       = 4
+enable_monitoring   = true
+enable_backups      = true
+backup_retention    = 7  # Days
+
+# ============================================================================
+# Tags for Cost Allocation and Management
+# ============================================================================
+tags = {
+  Environment    = "staging"
+  Project        = "digital-public-goods"
+  ManagedBy      = "terraform"
+  CostCenter     = "engineering"
+  Owner          = "devops-team"
+  Application    = "agri-help"
+  Lifecycle      = "staging"
+  AutoShutdown   = "disabled"
+  BackupPolicy   = "weekly"
+  SecurityLevel  = "medium"
+  Compliance     = "required"
+}
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+vpc_cidr           = "10.1.0.0/16"
+public_subnet_cidr = "10.1.1.0/24"
+enable_nat_gateway = true
+
+# ============================================================================
+# Security Configuration
+# ============================================================================
+allowed_ssh_cidrs = ["10.0.0.0/8", "172.16.0.0/12"]  # Internal only
+enable_ssl        = true
+
+# ============================================================================
+# Azure Specific (if using Azure)
+# ============================================================================
+# azure_ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2E... staging-key"
+
+# ============================================================================
+# GCP Specific (if using GCP)
+# ============================================================================
+# gcp_project_id = "your-project-staging"
+
+# ============================================================================
+# Notes
+# ============================================================================
+# - Staging environment mirrors production configuration
+# - Used for integration testing and UAT
+# - Auto-scaling enabled for testing scaling behavior
+# - Full monitoring and alerting configured
+# - Weekly backups with 7-day retention
+# - Estimated monthly cost: $800-1,200

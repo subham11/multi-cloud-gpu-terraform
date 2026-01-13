@@ -1,0 +1,21 @@
+{{- if .Values.backend.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "agri-help-app.fullname" . }}-backend
+  labels:
+    {{- include "agri-help-app.labels" . | nindent 4 }}
+    component: backend
+spec:
+  {{- if .Values.backend.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.backend.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.backend.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.backend.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "agri-help-app.selectorLabels" . | nindent 6 }}
+      component: backend
+  unhealthyPodEvictionPolicy: AlwaysAllow
+{{- end }}

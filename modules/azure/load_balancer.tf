@@ -11,6 +11,8 @@ resource "azurerm_lb" "main" {
     name                 = "PublicIPAddress"
     public_ip_address_id = azurerm_public_ip.lb[0].id
   }
+
+  tags = merge(var.tags, { Name = "${var.vm_name}-lb" })
 }
 
 resource "azurerm_lb_backend_address_pool" "main" {

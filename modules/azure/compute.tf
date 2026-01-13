@@ -1,5 +1,9 @@
 # Azure GPU Virtual Machine
 
+locals {
+  primary_private_subnet_id = length(azurerm_subnet.private) > 0 ? values(azurerm_subnet.private)[0].id : null
+}
+
 resource "azurerm_network_interface" "main" {
   count               = 1
   name                = "${var.vm_name}-nic"
@@ -8,9 +12,11 @@ resource "azurerm_network_interface" "main" {
 
   ip_configuration {
     name                          = "internal"
-    subnet_id                     = azurerm_subnet.main[0].id
+    subnet_id                     = local.primary_private_subnet_id
     private_ip_address_allocation = "Dynamic"
   }
+
+  tags = merge(var.tags, { Name = "${var.vm_name}-nic" })
 }
 
 resource "azurerm_network_interface_security_group_association" "main" {
@@ -45,4 +51,6 @@ resource "azurerm_linux_virtual_machine" "gpu" {
     sku       = "22_04-lts-gen2"
     version   = "latest"
   }
+
+  tags = merge(var.tags, { Name = var.vm_name, Tier = "compute" })
 }

@@ -1,0 +1,206 @@
+# ============================================================================
+# AgriBot Ethiopia - Development Environment Values
+# Optimized for development with minimal resources and relaxed constraints
+# ============================================================================
+
+global:
+  environment: development
+  domain: agri-help-dev.local
+
+# ============================================================================
+# Backend Service
+# ============================================================================
+backend:
+  replicaCount: 1
+  
+  ingress:
+    enabled: true
+    hosts:
+      - host: api-dev.agri-help.local
+        paths:
+          - path: /
+            pathType: Prefix
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+      nvidia.com/gpu: "0"
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  
+  autoscaling:
+    enabled: false
+  
+  env:
+    - name: ENVIRONMENT
+      value: development
+    - name: LOG_LEVEL
+      value: debug
+    - name: DEBUG
+      value: "true"
+  
+  livenessProbe:
+    initialDelaySeconds: 60
+    periodSeconds: 30
+  
+  readinessProbe:
+    initialDelaySeconds: 20
+    periodSeconds: 10
+
+# ============================================================================
+# Frontend Service
+# ============================================================================
+frontend:
+  replicaCount: 1
+  
+  ingress:
+    enabled: true
+    hosts:
+      - host: dev.agri-help.local
+        paths:
+          - path: /
+            pathType: Prefix
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+  
+  autoscaling:
+    enabled: false
+
+# ============================================================================
+# OAN UI Service
+# ============================================================================
+oanUI:
+  replicaCount: 1
+  
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
+
+# ============================================================================
+# Transcribe Service
+# ============================================================================
+transcribeService:
+  replicaCount: 1
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      nvidia.com/gpu: "0"
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
+# ============================================================================
+# PostgreSQL Configuration
+# ============================================================================
+postgresql:
+  enabled: true
+  
+  primary:
+    persistence:
+      enabled: true
+      size: 5Gi
+    
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+
+# ============================================================================
+# Redis Configuration
+# ============================================================================
+redis:
+  enabled: true
+  
+  master:
+    persistence:
+      enabled: false
+    
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+  
+  replica:
+    replicaCount: 0
+
+# ============================================================================
+# Qdrant Vector Database
+# ============================================================================
+qdrant:
+  enabled: true
+  
+  replicaCount: 1
+  
+  persistence:
+    enabled: true
+    size: 5Gi
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
+# ============================================================================
+# Pod Disruption Budgets
+# ============================================================================
+backend:
+  podDisruptionBudget:
+    enabled: false
+
+frontend:
+  podDisruptionBudget:
+    enabled: false
+
+# ============================================================================
+# Network Policies (Relaxed for dev)
+# ============================================================================
+networkPolicy:
+  enabled: false
+
+# ============================================================================
+# Pod Security Policy
+# ============================================================================
+podSecurityPolicy:
+  enabled: false
+
+# ============================================================================
+# Autoscaling
+# ============================================================================
+monitoring:
+  enabled: false
+
+# ============================================================================
+# Backup
+# ============================================================================
+backup:
+  enabled: false
+
+# ============================================================================
+# GPU Support
+# ============================================================================
+features:
+  gpu:
+    enabled: false

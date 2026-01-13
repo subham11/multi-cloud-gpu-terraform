@@ -27,6 +27,16 @@ A production-ready, modular Terraform infrastructure for deploying GPU-accelerat
 - **Fully automated** infrastructure provisioning
 - **Zero manual configuration** required
 - Deploy to AWS, Azure, or GCP with one command
+- New **single_click_init.sh** prompts for provider, backend config, environment, and instance name before init
+
+### 🗄️ Remote State Templates
+- Backend templates for **AWS S3 + DynamoDB**, **Azure Blob**, **GCP GCS** in `backends/`
+- Use `terraform init -backend-config=backends/<cloud>-backend.hcl` or run `scripts/single_click_init.sh`
+
+### 🌐 Hardened Networking
+- Multi-tier public/private/database subnets across AZs/zones
+- NAT/IGW/Cloud NAT with route tables per tier
+- Optional private DNS zones (Azure/GCP) and VPC/NSG/subnet flow logs enabled
 
 ### 🏗️ Production-Ready Infrastructure
 - **GPU instances**: AWS g5.4xlarge, Azure Standard_NV36ads_A10_v5, GCP with L4 GPU
@@ -58,6 +68,11 @@ A production-ready, modular Terraform infrastructure for deploying GPU-accelerat
 multi-cloud-gpu-terraform/
 │
 ├── README.md                    # This file - main documentation
+├── backends/                    # Remote state templates (S3/DynamoDB, Blob, GCS)
+│   ├── aws-backend.tf           # AWS backend template (commented block + steps)
+│   ├── azure-backend.tf         # Azure backend template (commented block + steps)
+│   └── gcp-backend.tf           # GCP backend template (commented block + steps)
+│
 ├── main.tf                      # Main orchestration (58 lines)
 ├── variables.tf                 # Input variable definitions
 ├── outputs.tf                   # Output definitions
@@ -97,6 +112,7 @@ multi-cloud-gpu-terraform/
 │       └── outputs.tf           # Module outputs (IPs, URLs)
 │
 ├── scripts/                     # Setup and deployment scripts
+│   ├── single_click_init.sh     # Prompts for provider/backend + vm_name, runs init
 │   ├── full-setup.sh            # Main orchestrator (180 lines)
 │   └── components/              # Modular script components
 │       ├── nvidia-setup.sh      # GPU driver installation (30 lines)
@@ -118,19 +134,14 @@ multi-cloud-gpu-terraform/
 │   ├── docker-compose.yml       # Local cloud emulators
 │   └── local_test_variables.tf  # Test variable definitions
 │
-├── readme/                      # Detailed documentation (15 files)
-│   ├── README.md                # Module structure overview
-│   ├── ARCHITECTURE.md          # Architecture comparison
-│   ├── QUICK_START.md           # Single-click deployment guide
-│   ├── APP_DEPLOYMENT_GUIDE.md  # Application deployment
-│   ├── JENKINS_SETUP_GUIDE.md   # CI/CD configuration
-│   ├── LOAD_BALANCER_IMPLEMENTATION.md  # LB details
-│   └── [9 more documentation files]
+├── readme/                      # Detailed documentation (all markdown moved here)
+│   ├── HELM_*.md, PROVISIONING_GUIDE.md, IAM_RBAC_GUIDE.md, NETWORKING_GUIDE.md, etc.
+│   └── backends_README.md       # Backend usage notes
 │
 └── backup/                      # Original monolithic files
-    ├── main.tf.backup           # Original 665-line main.tf
-    ├── full-setup.sh.backup     # Original 583-line script
-    └── outputs.tf.backup        # Original outputs file
+   ├── main.tf.backup           # Original 665-line main.tf
+   ├── full-setup.sh.backup     # Original 583-line script
+   └── outputs.tf.backup        # Original outputs file
 ```
 
 ## 🏗️ Architecture
@@ -368,18 +379,26 @@ vm_name        = "my-gpu-instance"
 gcp_project_id = "your-gcp-project-id"  # Required for GCP
 ```
 
-### 3. Deploy Infrastructure
+### 3. Initialize Backend + Terraform
+```bash
+# Guided init (prompts for cloud, backend params, vm_name)
+./scripts/single_click_init.sh
+
+# Or manual init with a backend template
+terraform init -backend-config=backends/aws-backend.tf   # or azure-backend.tf / gcp-backend.tf
+```
+
+### 4. Deploy Infrastructure
 ```bash
 # Single-click deployment
 ./deploy.sh
 
 # Or manually
-terraform init
 terraform plan
 terraform apply
 ```
 
-### 4. Access Your Services
+### 5. Access Your Services
 
 After 35-50 minutes (includes NVIDIA driver installation), access:
 
@@ -388,7 +407,7 @@ After 35-50 minutes (includes NVIDIA driver installation), access:
 - **Agri Help Backend**: `http://<INSTANCE_IP>:3000`
 - **Jenkins CI/CD**: `http://<INSTANCE_IP>:8080` (admin/admin123)
 
-### 5. Clean Up
+### 6. Clean Up
 ```bash
 terraform destroy
 ```

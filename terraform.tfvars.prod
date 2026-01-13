@@ -1,0 +1,106 @@
+# Production Environment Configuration
+# This file contains variable values for the production environment
+
+# ============================================================================
+# Cloud Provider Configuration
+# ============================================================================
+cloud_provider = "gcp"  # Options: aws, azure, gcp
+region         = "us-central1"
+
+# ============================================================================
+# Environment Configuration
+# ============================================================================
+environment = "production"
+vm_name     = "gpu-prod"
+
+# ============================================================================
+# Resource Configuration
+# ============================================================================
+# Production uses high availability and auto-scaling
+instance_count      = 3
+enable_autoscaling  = true
+min_instances       = 3
+max_instances       = 10
+enable_monitoring   = true
+enable_backups      = true
+backup_retention    = 30  # Days
+
+# ============================================================================
+# Tags for Cost Allocation and Management
+# ============================================================================
+tags = {
+  Environment    = "production"
+  Project        = "digital-public-goods"
+  ManagedBy      = "terraform"
+  CostCenter     = "operations"
+  Owner          = "devops-team"
+  Application    = "agri-help"
+  Lifecycle      = "production"
+  AutoShutdown   = "disabled"
+  BackupPolicy   = "daily"
+  SecurityLevel  = "high"
+  Compliance     = "required"
+  DataRetention  = "30-days"
+  DisasterRecovery = "enabled"
+}
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+vpc_cidr            = "10.2.0.0/16"
+public_subnet_cidr  = "10.2.1.0/24"
+private_subnet_cidr = "10.2.2.0/24"
+enable_nat_gateway  = true
+enable_vpc_flow_logs = true
+
+# ============================================================================
+# Security Configuration
+# ============================================================================
+allowed_ssh_cidrs = ["10.0.0.0/8"]  # Internal bastion only
+enable_ssl        = true
+enable_waf        = true  # Web Application Firewall
+
+# ============================================================================
+# High Availability Configuration
+# ============================================================================
+enable_multi_az           = true
+enable_cross_region_backup = true
+health_check_interval     = 30  # Seconds
+unhealthy_threshold       = 2   # Failed health checks before replacement
+
+# ============================================================================
+# Monitoring and Alerting
+# ============================================================================
+enable_cloudwatch     = true  # AWS
+enable_azure_monitor  = true  # Azure
+enable_stackdriver    = true  # GCP
+alert_email           = "devops@example.com"
+enable_pagerduty      = true
+
+# ============================================================================
+# GCP Specific (if using GCP)
+# ============================================================================
+# gcp_project_id         = "your-project-prod"
+# gcp_ssl_certificate_id = "projects/PROJECT_ID/global/sslCertificates/agri-help-cert"
+
+# ============================================================================
+# AWS Specific (if using AWS)
+# ============================================================================
+# aws_certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERT_ID"
+
+# ============================================================================
+# Azure Specific (if using Azure)
+# ============================================================================
+# azure_ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2E... production-key"
+
+# ============================================================================
+# Notes
+# ============================================================================
+# - Production environment with full high availability
+# - Multi-AZ deployment for disaster recovery
+# - Auto-scaling based on CPU/GPU utilization (70% threshold)
+# - Daily backups with 30-day retention
+# - Full monitoring, logging, and alerting
+# - WAF enabled for security
+# - SSL/TLS termination at load balancer
+# - Estimated monthly cost: $2,500-4,000 (with auto-scaling)

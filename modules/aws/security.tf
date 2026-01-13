@@ -30,9 +30,7 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
-    Name = "${var.vm_name}-alb-sg"
-  }
+  tags = merge(var.common_tags, { Name = "${var.vm_name}-alb-sg" })
 }
 
 resource "aws_security_group" "instance" {
@@ -74,7 +72,7 @@ resource "aws_security_group" "instance" {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.allowed_ssh_cidrs
   }
 
   # SSH
@@ -83,7 +81,7 @@ resource "aws_security_group" "instance" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.allowed_ssh_cidrs
   }
 
   egress {
@@ -94,7 +92,5 @@ resource "aws_security_group" "instance" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
-    Name = "${var.vm_name}-instance-sg"
-  }
+  tags = merge(var.common_tags, { Name = "${var.vm_name}-instance-sg" })
 }
