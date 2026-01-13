@@ -1,0 +1,39 @@
+## Terraform
+terraform.tfvars
+terraform.tfvars.json
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+## IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Testing
+test-fixtures/
+.terratest-cache/
+
+## Credentials
+.aws/
+.gcp/
+.azure/
+**/*.key.json
+**/*.pem
+**/*.pub
+
+## Environment
+.env
+.env.local

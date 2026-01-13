@@ -1,0 +1,52 @@
+output "selected_cloud" {
+  value       = var.cloud_provider
+  description = "The selected cloud provider"
+}
+
+# AWS Outputs
+output "aws_load_balancer_dns" {
+  value       = var.cloud_provider == "aws" && length(aws_lb.main) > 0 ? aws_lb.main[0].dns_name : null
+  description = "AWS Application Load Balancer DNS name"
+}
+
+output "aws_instance_id" {
+  value       = var.cloud_provider == "aws" && length(aws_instance.gpu) > 0 ? aws_instance.gpu[0].id : null
+  description = "AWS EC2 instance ID"
+}
+
+output "aws_http_endpoint" {
+  value       = var.cloud_provider == "aws" && length(aws_lb.main) > 0 ? "http://${aws_lb.main[0].dns_name}" : null
+  description = "AWS HTTP endpoint URL"
+}
+
+# Azure Outputs
+output "azure_load_balancer_ip" {
+  value       = var.cloud_provider == "azure" && length(azurerm_public_ip.lb) > 0 ? azurerm_public_ip.lb[0].ip_address : null
+  description = "Azure Load Balancer public IP address"
+}
+
+output "azure_vm_id" {
+  value       = var.cloud_provider == "azure" && length(azurerm_linux_virtual_machine.gpu) > 0 ? azurerm_linux_virtual_machine.gpu[0].id : null
+  description = "Azure VM ID"
+}
+
+output "azure_http_endpoint" {
+  value       = var.cloud_provider == "azure" && length(azurerm_public_ip.lb) > 0 ? "http://${azurerm_public_ip.lb[0].ip_address}" : null
+  description = "Azure HTTP endpoint URL"
+}
+
+# GCP Outputs
+output "gcp_load_balancer_ip" {
+  value       = var.cloud_provider == "gcp" && length(google_compute_global_forwarding_rule.http) > 0 ? google_compute_global_forwarding_rule.http[0].ip_address : null
+  description = "GCP Load Balancer IP address"
+}
+
+output "gcp_instance_group" {
+  value       = var.cloud_provider == "gcp" && length(google_compute_instance_group_manager.gpu) > 0 ? google_compute_instance_group_manager.gpu[0].instance_group : null
+  description = "GCP Managed Instance Group"
+}
+
+output "gcp_http_endpoint" {
+  value       = var.cloud_provider == "gcp" && length(google_compute_global_forwarding_rule.http) > 0 ? "http://${google_compute_global_forwarding_rule.http[0].ip_address}" : null
+  description = "GCP HTTP endpoint URL"
+}

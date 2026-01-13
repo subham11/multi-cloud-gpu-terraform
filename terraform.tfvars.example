@@ -1,0 +1,32 @@
+# Example Terraform Variables File
+# Copy to terraform.tfvars and fill in your values
+# DO NOT commit terraform.tfvars to version control
+
+# Required: Choose cloud provider
+cloud_provider = "aws"  # Options: aws, azure, gcp
+
+# Required: Region for the selected cloud
+region = "ap-south-1"  # AWS Mumbai
+
+# Optional: Custom VM name
+vm_name = "gpu-instance"
+
+# Optional: GCP Project ID (required only for GCP)
+gcp_project_id = "my-gcp-project"
+
+# Example configurations for different clouds:
+
+# ==================== AWS ====================
+# region = "ap-south-1"      # Mumbai
+# region = "ap-south-2"      # Chennai
+# region = "us-east-1"       # US East
+
+# ==================== Azure ====================
+# region = "southeastasia"   # Singapore
+# region = "eastasia"        # Hong Kong
+# region = "westus"          # US West
+
+# ==================== GCP ====================
+# region = "asia-south1"     # Delhi
+# region = "asia-southeast1" # Singapore
+# region = "us-central1"     # US Central

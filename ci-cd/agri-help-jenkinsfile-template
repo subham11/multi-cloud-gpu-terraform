@@ -1,0 +1,290 @@
+// ============================================================================
+// JENKINS PIPELINE TEMPLATE FOR AGRI HELP
+// GitHub: https://github.com/Sulopatech/agri_help
+// STATUS: TEMPLATE (Pending repo availability)
+// ============================================================================
+//
+// This Jenkinsfile is a TEMPLATE for the Agri Help project.
+// It implements the same CI/CD pattern as OAN UI Service:
+//
+// 1. AUTOMATIC TRIGGERS
+//    - GitHub webhook on main branch push/merge
+//    - Manual parameterized builds for other branches
+//
+// 2. TEST STAGES
+//    - Checkout source code
+//    - Install dependencies (npm/pip/etc based on tech stack)
+//    - Run unit tests with coverage reporting
+//    - Parse and enforce 85% code coverage threshold
+//
+// 3. DEPLOYMENT CONDITIONS
+//    - IF coverage >= 85%: Proceed to deployment
+//    - IF coverage < 85%: FAIL build and block deployment
+//    - IF 0 test cases: Allow deployment
+//
+// 4. DEPLOYMENT
+//    - Build application artifacts
+//    - Deploy to production directory
+//    - Restart application service
+//
+// NOTE: Configure with actual tech stack details once repository is available
+//
+// ============================================================================
+
+pipeline {
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    parameters {
+        string(
+            name: 'GITHUB_BRANCH',
+            defaultValue: 'main',
+            description: 'GitHub branch to deploy (default: main)'
+        )
+    }
+
+    environment {
+        APP_NAME = 'agri_help'
+        APP_REPO = 'https://github.com/Sulopatech/agri_help.git'
+        APP_PATH = '/opt/applications/agri_help'
+        APP_PORT = '5001'  // Different from OAN UI Service
+        COVERAGE_THRESHOLD = '85'
+        GITHUB_BRANCH_ENV = "${params.GITHUB_BRANCH ?: 'main'}"
+        BUILD_LOG = '/var/log/agri-help-build.log'
+    }
+
+    triggers {
+        githubPush()
+    }
+
+    stages {
+        stage('Initialization') {
+            steps {
+                script {
+                    echo "=========================================="
+                    echo "AGRI HELP CI/CD PIPELINE"
+                    echo "=========================================="
+                    echo "Build: ${BUILD_NUMBER}"
+                    echo "Branch: ${GITHUB_BRANCH_ENV}"
+                    echo "Timestamp: ${new Date().format('yyyy-MM-dd HH:mm:ss')}"
+                    echo "=========================================="
+                    echo ""
+                    echo "⚠ NOTE: This is a template pipeline"
+                    echo "Actual configuration pending repository availability"
+                    echo ""
+                    
+                    deleteDir()
+                    sh 'mkdir -p /var/log'
+                }
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                script {
+                    echo "[STAGE] Checking out source code..."
+                    try {
+                        git branch: "${GITHUB_BRANCH_ENV}",
+                            url: "${APP_REPO}",
+                            credentialsId: 'github-credentials'
+                        echo "✓ Repository cloned successfully"
+                    } catch (Exception e) {
+                        echo "⚠ Attempting checkout without credentials..."
+                        git branch: "${GITHUB_BRANCH_ENV}",
+                            url: "${APP_REPO}"
+                        echo "✓ Repository cloned successfully (anonymous)"
+                    }
+                    
+                    sh '''
+                        echo "Repository Information:"
+                        git log -1 --oneline
+                        
+                        echo ""
+                        echo "Directory Structure:"
+                        ls -la
+                        
+                        echo ""
+                        echo "Checking tech stack..."
+                        [ -f "package.json" ] && echo "✓ Node.js project detected" || echo "○ Not Node.js"
+                        [ -f "requirements.txt" ] && echo "✓ Python project detected" || echo "○ Not Python"
+                        [ -f "Gemfile" ] && echo "✓ Ruby project detected" || echo "○ Not Ruby"
+                        [ -f "go.mod" ] && echo "✓ Go project detected" || echo "○ Not Go"
+                    '''
+                }
+            }
+        }
+
+        stage('Detect Dependencies') {
+            steps {
+                script {
+                    echo "[STAGE] Detecting project dependencies..."
+                    
+                    sh '''
+                        # Detect which dependency manager is being used
+                        if [ -f "package.json" ]; then
+                            echo "✓ Node.js Project"
+                            echo "Runtime: npm or yarn"
+                            echo ""
+                            echo "Update this pipeline stage with:"
+                            echo "  - npm ci (or yarn install)"
+                            echo "  - npm test -- --coverage"
+                            echo "  - npm run build"
+                            
+                        elif [ -f "requirements.txt" ]; then
+                            echo "✓ Python Project"
+                            echo "Runtime: pip + pytest/unittest"
+                            echo ""
+                            echo "Update this pipeline stage with:"
+                            echo "  - pip install -r requirements.txt"
+                            echo "  - pytest --cov=. tests/"
+                            echo "  - python setup.py build"
+                            
+                        else
+                            echo "⚠ Unable to auto-detect tech stack"
+                            echo "Manual configuration required in Jenkinsfile"
+                            echo ""
+                            echo "Check README.md for build instructions:"
+                            [ -f "README.md" ] && cat README.md | head -50 || echo "No README found"
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                script {
+                    echo "[STAGE] Installing dependencies..."
+                    echo "⚠ PLACEHOLDER: Configure based on detected tech stack"
+                    echo ""
+                    echo "For Node.js projects:"
+                    echo "  npm ci --prefer-offline --no-audit"
+                    echo ""
+                    echo "For Python projects:"
+                    echo "  pip install -r requirements.txt"
+                }
+            }
+        }
+
+        stage('Run Tests & Coverage') {
+            steps {
+                script {
+                    echo "[STAGE] Running tests with coverage..."
+                    echo "⚠ PLACEHOLDER: Configure based on project type"
+                    echo ""
+                    echo "For Node.js projects:"
+                    echo "  npm test -- --coverage --watchAll=false"
+                    echo ""
+                    echo "For Python projects:"
+                    echo "  pytest --cov=. --cov-report=json tests/"
+                }
+            }
+        }
+
+        stage('Coverage Threshold Check') {
+            steps {
+                script {
+                    echo "[STAGE] Enforcing coverage threshold (${COVERAGE_THRESHOLD}%)..."
+                    echo "⚠ PLACEHOLDER: Implement coverage parsing"
+                    echo ""
+                    echo "Coverage logic:"
+                    echo "  - If coverage >= 85%: PASS (proceed to deploy)"
+                    echo "  - If coverage < 85%: FAIL (block deployment)"
+                    echo "  - If 0 tests: PASS (deploy anyway)"
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                script {
+                    echo "[STAGE] Building production artifacts..."
+                    echo "⚠ PLACEHOLDER: Configure based on project type"
+                    echo ""
+                    echo "For Node.js projects:"
+                    echo "  npm run build"
+                    echo ""
+                    echo "For Python projects:"
+                    echo "  python setup.py build"
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "[STAGE] Deploying to production..."
+                    echo "⚠ PLACEHOLDER: Configure deployment process"
+                    echo ""
+                    echo "Expected process:"
+                    echo "  1. Backup current deployment"
+                    echo "  2. Copy new artifacts to ${APP_PATH}"
+                    echo "  3. Restart application service"
+                    echo "  4. Verify health check endpoint"
+                }
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                script {
+                    echo "[STAGE] Running health checks..."
+                    echo "⚠ PLACEHOLDER: Configure health check"
+                    echo ""
+                    echo "Expected endpoint:"
+                    echo "  http://localhost:${APP_PORT}/health"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "=========================================="
+            echo "✓ PIPELINE SUCCEEDED"
+            echo "=========================================="
+        }
+        failure {
+            echo "=========================================="
+            echo "✗ PIPELINE FAILED"
+            echo "=========================================="
+            echo "Check logs for details"
+        }
+        always {
+            echo ""
+            echo "=========================================="
+            echo "CONFIGURATION INSTRUCTIONS"
+            echo "=========================================="
+            echo ""
+            echo "1. UPDATE THIS JENKINSFILE WITH:"
+            echo "   - Correct dependency installation command"
+            echo "   - Correct test command with coverage"
+            echo "   - Correct build command"
+            echo "   - Correct health check endpoint"
+            echo "   - Correct application port"
+            echo ""
+            echo "2. CREATE JENKINS JOB:"
+            echo "   - Jenkins UI → New Item → Pipeline"
+            echo "   - Name: agri_help"
+            echo "   - Definition: Pipeline script from SCM"
+            echo "   - SCM: Git"
+            echo "   - Repository: ${APP_REPO}"
+            echo "   - Script Path: Jenkinsfile"
+            echo ""
+            echo "3. CONFIGURE GITHUB WEBHOOK:"
+            echo "   - Repository Settings → Webhooks"
+            echo "   - Payload URL: http://<JENKINS>/github-webhook/"
+            echo "   - Events: Push events"
+            echo ""
+            echo "=========================================="
+        }
+    }
+}

@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # LocalStack: Local AWS emulation
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack-gpu-test
+    ports:
+      - "4566:4566"  # LocalStack gateway
+    environment:
+      - DEBUG=1
+      - SERVICES=ec2,iam
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    volumes:
+      - "${TMPDIR:-/tmp}/localstack:/tmp/localstack"
+    healthcheck:
+      test: ["CMD", "awslocal", "ec2", "describe-regions"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Azurite: Local Azure Storage emulation
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: azurite-gpu-test
+    ports:
+      - "10000:10000"  # Blob Storage
+      - "10001:10001"  # Queue Storage
+      - "10002:10002"  # Table Storage
+    environment:
+      - AZURITE_ACCOUNTS=devstoreaccount1:xxx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+networks:
+  default:
+    name: terraform-test-network

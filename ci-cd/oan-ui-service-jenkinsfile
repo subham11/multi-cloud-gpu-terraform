@@ -1,0 +1,526 @@
+// ============================================================================
+// JENKINS PIPELINE FOR OAN UI SERVICE
+// GitHub: https://github.com/the-swag-coder/oan-ui-service
+// ============================================================================
+//
+// This Jenkinsfile implements a CI/CD pipeline for the OAN UI Service
+// with the following features:
+//
+// 1. AUTOMATIC TRIGGERS
+//    - GitHub webhook on main branch push/merge
+//    - Manual parameterized builds for other branches
+//
+// 2. TEST STAGES
+//    - Checkout source code
+//    - Install Node.js dependencies
+//    - Run unit tests with coverage reporting
+//    - Parse and enforce 85% code coverage threshold
+//
+// 3. DEPLOYMENT CONDITIONS
+//    - IF coverage >= 85%: Proceed to deployment
+//    - IF coverage < 85%: FAIL build and block deployment
+//    - IF 0 test cases: Allow deployment (no tests = no coverage requirement)
+//
+// 4. DEPLOYMENT
+//    - Copy build artifacts to production directory
+//    - Restart Nginx to serve updated application
+//    - Generate deployment report
+//
+// ============================================================================
+
+pipeline {
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    parameters {
+        string(
+            name: 'GITHUB_BRANCH',
+            defaultValue: 'main',
+            description: 'GitHub branch to deploy (default: main). Used for manual deployments.'
+        )
+    }
+
+    environment {
+        APP_NAME = 'oan-ui-service'
+        APP_REPO = 'https://github.com/the-swag-coder/oan-ui-service.git'
+        APP_PATH = '/opt/applications/oan-ui-service'
+        APP_PORT = '5000'
+        NODE_VERSION = '18'
+        COVERAGE_THRESHOLD = '85'
+        GITHUB_BRANCH_ENV = "${params.GITHUB_BRANCH ?: 'main'}"
+        BUILD_LOG = '/var/log/oan-ui-service-build.log'
+        COVERAGE_REPORT = '/tmp/coverage-report.json'
+    }
+
+    triggers {
+        // GitHub webhook trigger for main branch
+        githubPush()
+    }
+
+    stages {
+        stage('Initialization') {
+            steps {
+                script {
+                    echo "=========================================="
+                    echo "OAN UI SERVICE CI/CD PIPELINE"
+                    echo "=========================================="
+                    echo "Build: ${BUILD_NUMBER}"
+                    echo "Branch: ${GITHUB_BRANCH_ENV}"
+                    echo "Timestamp: ${new Date().format('yyyy-MM-dd HH:mm:ss')}"
+                    echo "=========================================="
+                    
+                    // Clean workspace
+                    deleteDir()
+                    
+                    // Create log directory
+                    sh 'mkdir -p /var/log'
+                }
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                script {
+                    echo "[STAGE] Checking out source code from GitHub..."
+                    try {
+                        git branch: "${GITHUB_BRANCH_ENV}",
+                            url: "${APP_REPO}",
+                            credentialsId: 'github-credentials' // Optional: configure in Jenkins credentials
+                        echo "✓ Repository cloned successfully"
+                    } catch (Exception e) {
+                        // Try without credentials if not configured
+                        echo "⚠ Attempting checkout without credentials..."
+                        git branch: "${GITHUB_BRANCH_ENV}",
+                            url: "${APP_REPO}"
+                        echo "✓ Repository cloned successfully (anonymous)"
+                    }
+                    
+                    // Display repository info
+                    sh '''
+                        echo "Repository Information:"
+                        git log -1 --oneline
+                        git status
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Node.js') {
+            steps {
+                script {
+                    echo "[STAGE] Verifying Node.js v${NODE_VERSION}..."
+                    sh '''
+                        node_version=$(node -v | cut -d'v' -f2)
+                        npm_version=$(npm -v)
+                        echo "Node.js version: $node_version"
+                        echo "npm version: $npm_version"
+                        
+                        # Verify major version matches requirement
+                        major_version=$(echo $node_version | cut -d'.' -f1)
+                        if [ "$major_version" -lt 16 ]; then
+                            echo "ERROR: Node.js v16+ required, found v$node_version"
+                            exit 1
+                        fi
+                        echo "✓ Node.js version verified"
+                    '''
+                }
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                script {
+                    echo "[STAGE] Installing Node.js dependencies..."
+                    sh '''
+                        echo "Running: npm ci (clean install)"
+                        npm ci --prefer-offline --no-audit
+                        
+                        if [ $? -eq 0 ]; then
+                            echo "✓ Dependencies installed successfully"
+                            echo ""
+                            echo "Installed packages:"
+                            npm list --depth=0
+                        else
+                            echo "ERROR: Failed to install dependencies"
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Run Tests & Coverage') {
+            steps {
+                script {
+                    echo "[STAGE] Running unit tests with coverage analysis..."
+                    
+                    // Check if test script exists in package.json
+                    def hasTestScript = sh(
+                        script: 'npm run | grep -q "test"',
+                        returnStatus: true
+                    )
+                    
+                    if (hasTestScript == 0) {
+                        echo "✓ Test script found in package.json"
+                        
+                        sh '''
+                            echo "Executing: npm test -- --coverage"
+                            npm test -- --coverage --watchAll=false --passWithNoTests 2>&1 | tee "${BUILD_LOG}"
+                            
+                            if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                                echo "✓ Tests executed successfully"
+                            else
+                                echo "✗ Tests failed with exit code: ${PIPESTATUS[0]}"
+                                exit 1
+                            fi
+                        '''
+                        
+                        // Store coverage report location
+                        env.HAS_TESTS = 'true'
+                    } else {
+                        echo "⚠ No test script found in package.json"
+                        echo "Proceeding without tests (no coverage threshold enforcement)"
+                        env.HAS_TESTS = 'false'
+                    }
+                }
+            }
+        }
+
+        stage('Parse Coverage') {
+            steps {
+                script {
+                    echo "[STAGE] Analyzing code coverage..."
+                    
+                    if (env.HAS_TESTS == 'true') {
+                        sh '''
+                            # Try to find coverage report
+                            COVERAGE_FILE=""
+                            
+                            if [ -f "coverage/coverage-final.json" ]; then
+                                COVERAGE_FILE="coverage/coverage-final.json"
+                            elif [ -f "coverage/lcov.json" ]; then
+                                COVERAGE_FILE="coverage/lcov.json"
+                            fi
+                            
+                            if [ -z "$COVERAGE_FILE" ]; then
+                                echo "⚠ Coverage report not found in standard locations"
+                                echo "Checking Jest coverage output..."
+                                
+                                # Try to extract from test output
+                                if grep -q "Statements\\|Branches\\|Functions\\|Lines" "${BUILD_LOG}"; then
+                                    echo "Coverage info found in build log"
+                                    grep -A 5 "Coverage summary" "${BUILD_LOG}" || \
+                                    grep -A 5 "Statements\\|Branches" "${BUILD_LOG}" || true
+                                else
+                                    echo "⚠ Unable to locate coverage metrics"
+                                fi
+                            else
+                                echo "✓ Coverage report found: $COVERAGE_FILE"
+                                # Try to extract coverage percentage
+                                if command -v jq &> /dev/null; then
+                                    jq '.total' "$COVERAGE_FILE" 2>/dev/null || echo "Coverage file format: JSON"
+                                fi
+                            fi
+                        '''
+                    } else {
+                        echo "✓ Skipping coverage analysis (no tests)"
+                    }
+                }
+            }
+        }
+
+        stage('Coverage Threshold Check') {
+            steps {
+                script {
+                    echo "[STAGE] Enforcing coverage threshold (${COVERAGE_THRESHOLD}%)..."
+                    
+                    if (env.HAS_TESTS == 'true') {
+                        sh '''
+                            # Extract coverage percentage from build log or coverage report
+                            COVERAGE_PERCENT=0
+                            
+                            # Method 1: Extract from Jest output
+                            if [ -f "${BUILD_LOG}" ]; then
+                                # Look for statement coverage percentage
+                                COVERAGE_PERCENT=$(grep -oP 'Statements\\s*:\\s*\\K[0-9.]+' "${BUILD_LOG}" | head -1)
+                            fi
+                            
+                            # Method 2: If not found, check coverage directory
+                            if [ -z "$COVERAGE_PERCENT" ] && [ -d "coverage" ]; then
+                                echo "⚠ Could not extract coverage from log, checking coverage directory..."
+                                COVERAGE_PERCENT=$(find coverage -name "*.json" -exec grep -h "pct" {} \; | head -1 | grep -oP '[0-9]+\.[0-9]+' || echo "0")
+                            fi
+                            
+                            # Default to 0 if still not found
+                            if [ -z "$COVERAGE_PERCENT" ]; then
+                                COVERAGE_PERCENT=0
+                            fi
+                            
+                            echo ""
+                            echo "=========================================="
+                            echo "COVERAGE REPORT"
+                            echo "=========================================="
+                            echo "Threshold: ${COVERAGE_THRESHOLD}%"
+                            echo "Detected Coverage: ${COVERAGE_PERCENT}%"
+                            echo "=========================================="
+                            echo ""
+                            
+                            # Check if coverage meets threshold
+                            COVERAGE_INT=$(printf "%.0f" "$COVERAGE_PERCENT")
+                            THRESHOLD_INT=${COVERAGE_THRESHOLD}
+                            
+                            if [ "$COVERAGE_INT" -lt "$THRESHOLD_INT" ]; then
+                                echo "✗ COVERAGE BELOW THRESHOLD"
+                                echo "Required: ${THRESHOLD_INT}% | Actual: ${COVERAGE_INT}%"
+                                echo "Build will FAIL - deployment blocked"
+                                exit 1
+                            else
+                                echo "✓ COVERAGE THRESHOLD MET"
+                                echo "Required: ${THRESHOLD_INT}% | Actual: ${COVERAGE_INT}%"
+                                echo "Build will PROCEED to deployment"
+                            fi
+                        '''
+                    } else {
+                        echo "✓ No tests found - skipping threshold enforcement"
+                        echo "Deployment will proceed"
+                    }
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                script {
+                    echo "[STAGE] Building production artifacts..."
+                    sh '''
+                        echo "Running: npm run build"
+                        npm run build
+                        
+                        if [ $? -eq 0 ]; then
+                            echo "✓ Build completed successfully"
+                            
+                            # Verify build output
+                            if [ -d "dist" ]; then
+                                echo "✓ Build artifacts found in dist/"
+                                echo "Build size: $(du -sh dist | cut -f1)"
+                                ls -la dist | head -10
+                            else
+                                echo "ERROR: Build output directory (dist/) not found"
+                                exit 1
+                            fi
+                        else
+                            echo "ERROR: Build failed"
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "[STAGE] Deploying to production..."
+                    sh '''
+                        echo "Creating backup of current deployment..."
+                        if [ -d "${APP_PATH}/dist" ]; then
+                            BACKUP_DIR="${APP_PATH}/dist.backup.$(date +%Y%m%d_%H%M%S)"
+                            cp -r "${APP_PATH}/dist" "$BACKUP_DIR"
+                            echo "✓ Backup created: $BACKUP_DIR"
+                        fi
+                        
+                        echo ""
+                        echo "Copying build artifacts..."
+                        mkdir -p "${APP_PATH}"
+                        cp -r dist/* "${APP_PATH}/dist/"
+                        
+                        if [ $? -eq 0 ]; then
+                            echo "✓ Build artifacts deployed"
+                        else
+                            echo "ERROR: Failed to copy artifacts"
+                            exit 1
+                        fi
+                        
+                        echo ""
+                        echo "Restarting Nginx service..."
+                        sudo systemctl restart nginx
+                        
+                        # Wait for Nginx to stabilize
+                        sleep 2
+                        
+                        if sudo systemctl is-active --quiet nginx; then
+                            echo "✓ Nginx restarted successfully"
+                        else
+                            echo "✗ Nginx failed to start"
+                            echo "Status:"
+                            sudo systemctl status nginx
+                            exit 1
+                        fi
+                        
+                        echo ""
+                        echo "Verifying health check endpoint..."
+                        HEALTH_CHECK=$(curl -s http://localhost:${APP_PORT}/health || echo "FAIL")
+                        if [ "$HEALTH_CHECK" != "FAIL" ]; then
+                            echo "✓ Health check passed"
+                        else
+                            echo "⚠ Health check failed (service may still be starting)"
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                script {
+                    echo "[STAGE] Running post-deployment health checks..."
+                    sh '''
+                        echo "Checking application health..."
+                        
+                        # Check if application is responding
+                        MAX_ATTEMPTS=5
+                        ATTEMPT=0
+                        
+                        while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+                            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${APP_PORT}/health)
+                            
+                            if [ "$RESPONSE" = "200" ]; then
+                                echo "✓ Application health check passed (HTTP 200)"
+                                exit 0
+                            fi
+                            
+                            ATTEMPT=$((ATTEMPT + 1))
+                            echo "⚠ Attempt $ATTEMPT: Received HTTP $RESPONSE"
+                            
+                            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                                sleep 2
+                            fi
+                        done
+                        
+                        echo "✗ Health check failed after $MAX_ATTEMPTS attempts"
+                        exit 1
+                    '''
+                }
+            }
+        }
+
+        stage('Generate Report') {
+            steps {
+                script {
+                    echo "[STAGE] Generating deployment report..."
+                    sh '''
+                        cat >> /opt/deployment-info.txt << 'JENKINS_DEPLOY_REPORT'
+
+========================================
+JENKINS BUILD #${BUILD_NUMBER}
+========================================
+Branch: ${GITHUB_BRANCH_ENV}
+Timestamp: $(date)
+Status: SUCCESS
+Coverage Threshold: ${COVERAGE_THRESHOLD}%
+Has Tests: ${HAS_TESTS}
+
+Build Log: /var/log/oan-ui-service-build.log
+Application: http://localhost:${APP_PORT}
+Health Check: http://localhost:${APP_PORT}/health
+
+Next Steps:
+1. Verify deployment: curl -v http://localhost:${APP_PORT}/health
+2. Check logs: sudo tail -f /var/log/nginx/access.log
+3. Monitor Nginx: sudo systemctl status nginx
+4. View build log: cat /var/log/oan-ui-service-build.log
+
+========================================
+JENKINS_DEPLOY_REPORT
+                        
+                        echo "✓ Report generated"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "=========================================="
+            echo "✓ PIPELINE SUCCEEDED"
+            echo "=========================================="
+            echo "Application deployed successfully"
+            echo "Build artifacts in: ${APP_PATH}/dist/"
+            echo "Application running on: http://localhost:${APP_PORT}"
+        }
+        failure {
+            echo "=========================================="
+            echo "✗ PIPELINE FAILED"
+            echo "=========================================="
+            echo "Check logs for details:"
+            echo "  Jenkins: /var/lib/jenkins/jobs/${APP_NAME}/builds/${BUILD_NUMBER}"
+            echo "  Build: ${BUILD_LOG}"
+            echo "  Nginx: /var/log/nginx/error.log"
+        }
+        unstable {
+            echo "=========================================="
+            echo "⚠ PIPELINE UNSTABLE"
+            echo "=========================================="
+            echo "Review warnings above"
+        }
+        always {
+            // Archive test results if available
+            junit testResults: '**/junit.xml', allowEmptyResults: true
+            
+            // Publish HTML reports
+            publishHTML([
+                reportDir: 'coverage',
+                reportFiles: 'index.html',
+                reportName: 'Coverage Report'
+            ]) || true
+            
+            // Clean up
+            cleanWs()
+        }
+    }
+}
+
+// ============================================================================
+// USAGE INSTRUCTIONS
+// ============================================================================
+//
+// 1. CREATE PIPELINE IN JENKINS
+//    - New Item → Pipeline
+//    - Name: "oan-ui-service"
+//    - Pipeline → Definition: "Pipeline script from SCM"
+//    - SCM: Git
+//    - Repository URL: https://github.com/the-swag-coder/oan-ui-service.git
+//    - Branch: */main
+//    - Script Path: Jenkinsfile
+//
+// 2. CONFIGURE GITHUB WEBHOOK
+//    - Repository Settings → Webhooks
+//    - Payload URL: http://<JENKINS_URL>:8080/github-webhook/
+//    - Events: Push events, Pull request events
+//    - Content type: application/json
+//
+// 3. CONFIGURE JENKINS CREDENTIALS (Optional)
+//    - Manage Jenkins → Manage Credentials
+//    - Add GitHub credentials for private repositories
+//    - Use credential ID: "github-credentials"
+//
+// 4. RUN PIPELINE
+//    - Manual: Jenkins UI → Build Now (uses main branch)
+//    - Manual with branch: Build with Parameters → specify branch
+//    - Automatic: GitHub webhook on push to main
+//
+// 5. MONITOR PIPELINE
+//    - Jenkins UI: Dashboard → oan-ui-service → Build #<NUMBER>
+//    - Blue Ocean: http://<JENKINS_URL>:8080/blue/
+//    - Logs: Console Output in Jenkins UI
+//
+// ============================================================================

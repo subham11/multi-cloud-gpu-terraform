@@ -1,0 +1,582 @@
+#!/bin/bash
+set -e
+echo "Starting NVIDIA drivers and CUDA installation..."
+
+# Update system
+apt-get update
+apt-get upgrade -y
+
+# Install build dependencies
+apt-get install -y build-essential curl wget git nginx net-tools
+
+# Detect NVIDIA GPU
+if lspci | grep -i nvidia > /dev/null; then
+  echo "NVIDIA GPU detected. Installing drivers and CUDA..."
+  
+  # Add NVIDIA repository
+  curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb -o /tmp/cuda-keyring.deb
+  dpkg -i /tmp/cuda-keyring.deb
+  apt-get update
+  
+  # Install NVIDIA drivers and CUDA toolkit
+  apt-get install -y cuda-toolkit-12-4 nvidia-driver-550
+  
+  # Add CUDA to PATH
+  echo 'export PATH=/usr/local/cuda/bin:$PATH' >> /etc/profile
+  echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> /etc/profile
+  
+  # Verify installation
+  nvidia-smi
+  
+  echo "NVIDIA drivers and CUDA installation completed successfully!"
+else
+  echo "No NVIDIA GPU detected. Skipping driver installation."
+fi
+
+# ================================================================================
+# APPLICATION DEPLOYMENT
+# ================================================================================
+
+echo "Starting application deployment phase..."
+
+APP_LOG="/var/log/app-deployment.log"
+
+# Load Git credentials if provided
+GIT_USERNAME=""
+GIT_PASSWORD=""
+if [ -f /tmp/git_username ]; then
+  GIT_USERNAME=$(cat /tmp/git_username)
+  echo "Git username loaded: $GIT_USERNAME" | tee -a "$APP_LOG"
+fi
+if [ -f /tmp/git_password ]; then
+  GIT_PASSWORD=$(cat /tmp/git_password)
+  echo "Git password loaded: ***" | tee -a "$APP_LOG"
+fi
+
+# Function to clone repo with or without credentials
+clone_repo() {
+  local repo_url="$1"
+  local target_dir="$2"
+  local repo_name="$3"
+  
+  echo "Attempting to clone $repo_name..." | tee -a "$APP_LOG"
+  
+  # Try public clone first
+  if git clone "$repo_url" "$target_dir" >> "$APP_LOG" 2>&1; then
+    echo "✓ $repo_name cloned successfully (public access)" | tee -a "$APP_LOG"
+    return 0
+  fi
+  
+  # If failed and credentials available, try with authentication
+  if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_PASSWORD" ]; then
+    echo "Public access failed. Trying with credentials..." | tee -a "$APP_LOG"
+    
+    # Extract repo path from URL
+    local repo_path=$(echo "$repo_url" | sed 's|https://github.com/||' | sed 's|.git$||')
+    local auth_url="https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/${repo_path}.git"
+    
+    if git clone "$auth_url" "$target_dir" >> "$APP_LOG" 2>&1; then
+      echo "✓ $repo_name cloned successfully (authenticated)" | tee -a "$APP_LOG"
+      return 0
+    fi
+  fi
+  
+  echo "✗ Failed to clone $repo_name" | tee -a "$APP_LOG"
+  return 1
+}
+
+# Install Node.js v18
+echo "Installing Node.js..." | tee -a "$APP_LOG"
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash - >> "$APP_LOG" 2>&1
+apt-get install -y nodejs >> "$APP_LOG" 2>&1
+echo "Node.js installed: $(node --version)" | tee -a "$APP_LOG"
+
+# Deploy OAN UI Service
+APPS_DIR="/opt/applications"
+OAN_DIR="$APPS_DIR/oan-ui-service"
+AGRI_DIR="$APPS_DIR/agri_help"
+mkdir -p "$APPS_DIR"
+
+echo "Cloning OAN UI Service..." | tee -a "$APP_LOG"
+if clone_repo "https://github.com/the-swag-coder/oan-ui-service" "$OAN_DIR" "OAN UI Service"; then
+  echo "Installing OAN UI Service dependencies..." | tee -a "$APP_LOG"
+  cd "$OAN_DIR"
+  npm install >> "$APP_LOG" 2>&1 || {
+    echo "ERROR: Failed to install OAN dependencies" | tee -a "$APP_LOG"
+    exit 1
+  }
+
+  echo "Building OAN UI Service for production..." | tee -a "$APP_LOG"
+  npm run build >> "$APP_LOG" 2>&1 || {
+    echo "ERROR: Failed to build OAN UI Service" | tee -a "$APP_LOG"
+    exit 1
+  }
+  
+  OAN_DEPLOYED=true
+else
+  OAN_DEPLOYED=false
+fi
+
+# Deploy Agri Help
+echo "Cloning Agri Help..." | tee -a "$APP_LOG"
+if clone_repo "https://github.com/Sulopatech/agri_help" "$AGRI_DIR" "Agri Help"; then
+  echo "Installing Agri Help dependencies..." | tee -a "$APP_LOG"
+  cd "$AGRI_DIR"
+  npm install >> "$APP_LOG" 2>&1 || {
+    echo "WARNING: Failed to install Agri Help dependencies" | tee -a "$APP_LOG"
+    AGRI_DEPLOYED=false
+  }
+
+  if [ -f "package.json" ] && grep -q "\"build\"" package.json; then
+    echo "Building Agri Help for production..." | tee -a "$APP_LOG"
+    npm run build >> "$APP_LOG" 2>&1 || {
+      echo "WARNING: Failed to build Agri Help" | tee -a "$APP_LOG"
+      AGRI_DEPLOYED=false
+    }
+    AGRI_DEPLOYED=true
+  else
+    echo "No build script found for Agri Help, deploying as-is" | tee -a "$APP_LOG"
+    AGRI_DEPLOYED=true
+  fi
+else
+  AGRI_DEPLOYED=false
+fi
+
+echo "Configuring Nginx for applications..." | tee -a "$APP_LOG"
+
+# Determine which apps to configure
+NGINX_CONFIG="/etc/nginx/sites-available/applications"
+
+cat > "$NGINX_CONFIG" << 'NGINX_CONF'
+# OAN UI Service - Port 5000
+server {
+    listen 5000;
+    server_name _;
+
+    root /opt/applications/oan-ui-service/dist;
+    index index.html;
+
+    # Gzip compression
+    gzip on;
+    gzip_types text/plain text/css text/javascript application/javascript application/json;
+
+    # Static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # SPA fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "OK\n";
+        add_header Content-Type text/plain;
+    }
+
+    # API proxy for backend services
+    location /api/ {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Agri Help - Port 3000 (if deployed)
+server {
+    listen 3000;
+    server_name _;
+
+    root /opt/applications/agri_help;
+    index index.html index.htm;
+
+    # Gzip compression
+    gzip on;
+    gzip_types text/plain text/css text/javascript application/javascript application/json;
+
+    # Static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Try files or proxy to Node.js app
+    location / {
+        # Check if it's a static file first
+        try_files $uri $uri/ @proxy;
+    }
+
+    location @proxy {
+        # Proxy to Node.js if running
+        proxy_pass http://localhost:4000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Health check
+    location /health {
+        access_log off;
+        return 200 "OK\n";
+        add_header Content-Type text/plain;
+    }
+}
+NGINX_CONF
+
+# Enable Nginx site
+ln -sf "$NGINX_CONFIG" /etc/nginx/sites-enabled/applications 2>/dev/null || true
+rm -f /etc/nginx/sites-enabled/default
+rm -f /etc/nginx/sites-enabled/oan-ui-service
+
+# Test Nginx configuration
+echo "Testing Nginx configuration..." | tee -a "$APP_LOG"
+nginx -t >> "$APP_LOG" 2>&1 || {
+  echo "ERROR: Nginx configuration test failed" | tee -a "$APP_LOG"
+  cat /var/log/nginx/error.log >> "$APP_LOG"
+  exit 1
+}
+
+# Start Nginx
+echo "Starting Nginx service..." | tee -a "$APP_LOG"
+systemctl restart nginx >> "$APP_LOG" 2>&1
+systemctl enable nginx >> "$APP_LOG" 2>&1
+
+# Wait for Nginx to start
+sleep 2
+
+# Verify services are running
+echo "Verifying deployed applications..." | tee -a "$APP_LOG"
+
+if [ "$OAN_DEPLOYED" = true ]; then
+  if curl -f http://localhost:5000/health > /dev/null 2>&1; then
+    echo "✓ OAN UI Service health check passed" | tee -a "$APP_LOG"
+  else
+    echo "✗ OAN UI Service health check failed" | tee -a "$APP_LOG"
+    cat /var/log/nginx/error.log >> "$APP_LOG"
+  fi
+fi
+REPORT
+=============================================
+APPLICATION DEPLOYMENT REPORT
+=============================================
+Deployment Time: $(date)
+
+DEPLOYED APPLICATIONS
+=============================================
+REPORT
+
+if [ "$OAN_DEPLOYED" = true ]; then
+  cat >> /opt/deployment-info.txt << 'REPORT'
+1. OAN UI Service
+   Status: DEPLOYED ✓
+   Location: /opt/applications/oan-ui-service
+   Port: 5000 (via Nginx)
+   Repository: https://github.com/the-swag-coder/oan-ui-service
+   
+   Tech Stack:
+   - Framework: React
+   - Language: TypeScript
+   - Build Tool: Vite
+   - CSS: Tailwind CSS
+   - Components: shadcn-ui
+   
+   Access URLs:
+   - Via Load Balancer: http://LOAD_BALANCER_IP/
+   - Direct: http://INSTANCE_IP:5000
+   
+   Authentication:
+   - Method: JWT (RS256)
+   - Token Format: ?token=YOUR_JWT_TOKEN
+   - Demo Keys: Available in GitHub README
+   
+   API Endpoints:
+   - Text-to-Speech: /api/tts/
+   - Speech Recognition: /api/transcribe/
+
+REPORT
+else
+  cat >> /opt/deployment-info.txt << 'REPORT'
+1. OAN UI Service
+   Status: DEPLOYMENT FAILED ✗
+   Check logs: /var/log/app-deployment.log
+
+REPORT
+fi
+
+if [ "$AGRI_DEPLOYED" = true ]; then
+  cat >> /opt/deployment-info.txt << 'REPORT'
+2. Agri Help
+   Status: DEPLOYED ✓
+   Location: /opt/applications/agri_help
+   Port: 3000 (via Nginx) / 4000 (Node.js)
+   Repository: https://github.com/Sulopatech/agri_help
+   
+   Access URLs:
+   - Via Load Balancer: http://LOAD_BALANCER_IP:3000
+   - Direct: http://INSTANCE_IP:3000
+   
+   Note: Application accessed with provided Git credentials
+
+REPORT
+else
+  cat >> /opt/deployment-info.txt << 'REPORT'
+2. Agri Help
+   Status: DEPLOYMENT FAILED / NOT ACCESSIBLE ✗
+   Reason: Repository not accessible or deployment error
+   Action: Verify Git credentials and repository access
+   Provided credentials: ${GIT_USERNAME}
+   Check logs: /var/log/app-deployment.log
+
+REPORT
+fi
+
+cat >> /opt/deployment-info.txt << 'REPORT'
+
+VERIFICATION COMMANDS
+=============================================
+Check OAN UI Service:
+  curl -I http://localhost:5000/health
+
+Check Agri Help:
+  curl -I http://localhost:3
+PENDING APPLICATIONS
+=============================================
+2. Agri Help
+   Status: AWAITING DEPLOYMENT
+   Reason: Repository not found (404)
+   Action: Deploy when URL is confirmed
+
+VERIFICATION COMMANDS
+=============================================
+Check application status:
+  curl -I http://localhost:5000/health
+
+View deployment logs:
+  sudo tail -f /var/log/app-deployment.log
+
+View Nginx logs:
+  sudo tail -f /var/log/nginx/access.log
+
+Restart services:
+  sudo systemctl restart nginx
+
+NODE VERSION: $(node --version)
+NPM VERSION: $(npm --version)
+NGINX STATUS: $(systemctl is-active nginx)
+
+=============================================
+Deployment completed at: $(date)
+=============================================
+REPORT
+
+echo "Application deployment phase completed!" | tee -a "$APP_LOG"
+
+# ================================================================================
+# JENKINS CI/CD SETUP - FULL AUTO-CONFIGURATION
+# ================================================================================
+
+echo "Starting Jenkins CI/CD setup with auto-configuration..." | tee -a "$APP_LOG"
+
+JENKINS_LOG="/var/log/jenkins-setup.log"
+JENKINS_HOME="/var/lib/jenkins"
+
+# Install Java (required for Jenkins)
+echo "Installing Java..." | tee -a "$JENKINS_LOG"
+apt-get install -y default-jre default-jdk >> "$JENKINS_LOG" 2>&1
+
+# Add Jenkins repository
+echo "Adding Jenkins repository..." | tee -a "$JENKINS_LOG"
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io.key | gpg --dearmor -o /usr/share/keyrings/jenkins-archive-keyring.gpg >> "$JENKINS_LOG" 2>&1
+echo deb [signed-by=/usr/share/keyrings/jenkins-archive-keyring.gpg] https://pkg.jenkins.io/debian-stable binary/ | tee /etc/apt/sources.list.d/jenkins.list >> "$JENKINS_LOG" 2>&1
+apt-get update >> "$JENKINS_LOG" 2>&1
+
+# Install Jenkins
+echo "Installing Jenkins..." | tee -a "$JENKINS_LOG"
+apt-get install -y jenkins >> "$JENKINS_LOG" 2>&1
+
+# Configure Jenkins to skip setup wizard BEFORE starting
+echo "Configuring Jenkins to skip setup wizard..." | tee -a "$JENKINS_LOG"
+mkdir -p "$JENKINS_HOME/init.groovy.d"
+
+# Auto-create admin user and skip wizard
+cat > "$JENKINS_HOME/init.groovy.d/01-setup.groovy" << 'GROOVY_SETUP'
+import jenkins.model.*
+import hudson.security.*
+import jenkins.install.InstallState
+
+def instance = Jenkins.getInstance()
+instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
+
+def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+hudsonRealm.createAccount("admin", "admin123")
+instance.setSecurityRealm(hudsonRealm)
+
+def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+strategy.setAllowAnonymousRead(false)
+instance.setAuthorizationStrategy(strategy)
+
+instance.save()
+println "Admin user created: admin/admin123"
+GROOVY_SETUP
+
+chown -R jenkins:jenkins "$JENKINS_HOME/init.groovy.d"
+
+# Start Jenkins
+echo "Starting Jenkins service..." | tee -a "$JENKINS_LOG"
+systemctl start jenkins >> "$JENKINS_LOG" 2>&1
+systemctl enable jenkins >> "$JENKINS_LOG" 2>&1
+
+# Save credentials
+cat > /opt/jenkins-credentials.txt << CREDS
+Jenkins URL: http://<INSTANCE_IP>:8080
+Username: admin
+Password: admin123
+
+Change password after login:
+Manage Jenkins → Manage Users → admin → Configure → Password
+CREDS
+chmod 600 /opt/jenkins-credentials.txt
+
+# Wait for Jenkins to be ready
+echo "Waiting for Jenkins to become ready..." | tee -a "$JENKINS_LOG"
+for i in {1..60}; do
+  if curl -s http://localhost:8080/login > /dev/null 2>&1; then
+    echo "Jenkins is ready!" | tee -a "$JENKINS_LOG"
+    break
+  fi
+  sleep 5
+done
+
+# Download Jenkins CLI
+wget -q http://localhost:8080/jnlpJars/jenkins-cli.jar -O /tmp/jenkins-cli.jar 2>/dev/null || true
+
+# Wait for admin user to be created
+sleep 10
+
+# Install plugins
+echo "Installing Jenkins plugins..." | tee -a "$JENKINS_LOG"
+JENKINS_USER="admin"
+JENKINS_PASS="admin123"
+
+for plugin in git github github-api workflow-aggregator blueocean junit; do
+  java -jar /tmp/jenkins-cli.jar -s http://localhost:8080/ -auth "$JENKINS_USER:$JENKINS_PASS" install-plugin "$plugin" >> "$JENKINS_LOG" 2>&1 || true
+done
+
+# Restart to load plugins
+java -jar /tmp/jenkins-cli.jar -s http://localhost:8080/ -auth "$JENKINS_USER:$JENKINS_PASS" safe-restart >> "$JENKINS_LOG" 2>&1 || true
+sleep 30
+
+# Wait for restart
+for i in {1..30}; do
+  if curl -s http://localhost:8080/login > /dev/null 2>&1; then
+    break
+  fi
+  sleep 5
+done
+
+# Create pipeline job
+echo "Creating Jenkins pipeline job..." | tee -a "$JENKINS_LOG"
+mkdir -p "$JENKINS_HOME/jobs/oan-ui-service"
+
+cat > "$JENKINS_HOME/jobs/oan-ui-service/config.xml" << 'JOB_XML'
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <description>OAN UI Service CI/CD Pipeline</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <com.coravy.hudson.plugins.github.GithubProjectProperty>
+      <projectUrl>https://github.com/the-swag-coder/oan-ui-service/</projectUrl>
+    </com.coravy.hudson.plugins.github.GithubProjectProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition">
+    <scm class="hudson.plugins.git.GitSCM">
+      <configVersion>2</configVersion>
+      <userRemoteConfigs>
+        <hudson.plugins.git.UserRemoteConfig>
+          <url>https://github.com/the-swag-coder/oan-ui-service.git</url>
+        </hudson.plugins.git.UserRemoteConfig>
+      </userRemoteConfigs>
+      <branches>
+        <hudson.plugins.git.BranchSpec>
+          <name>*/main</name>
+        </hudson.plugins.git.BranchSpec>
+      </branches>
+      <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+      <submoduleCfg class="empty-list"/>
+      <extensions/>
+    </scm>
+    <scriptPath>Jenkinsfile</scriptPath>
+    <lightweight>true</lightweight>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
+JOB_XML
+
+chown -R jenkins:jenkins "$JENKINS_HOME/jobs"
+
+# Reload configuration
+java -jar /tmp/jenkins-cli.jar -s http://localhost:8080/ -auth "$JENKINS_USER:$JENKINS_PASS" reload-configuration >> "$JENKINS_LOG" 2>&1 || true
+
+echo "Jenkins CI/CD setup completed with auto-configuration!" | tee -a "$JENKINS_LOG"
+
+# ================================================================================
+# FINAL DEPLOYMENT REPORT
+# ================================================================================
+
+echo "Generating final deployment report..." | tee -a "$APP_LOG"
+
+cat >> /opt/deployment-info.txt << 'JENKINS_REPORT'
+
+=============================================
+JENKINS CI/CD - AUTO-CONFIGURED ✓
+=============================================
+Status: INSTALLED & READY
+Port: 8080 (direct access)
+
+Auto-Configuration Complete:
+  ✓ Setup wizard skipped
+  ✓ Admin user created automatically
+  ✓ Required plugins installed
+  ✓ Pipeline job created (oan-ui-service)
+  ✓ Ready for immediate use
+
+Access Jenkins:
+  URL: http://<INSTANCE_IP>:8080
+  Username: admin
+  Password: admin123
+  
+  Credentials: cat /opt/jenkins-credentials.txt
+
+Pipeline Job Ready:
+  Name: oan-ui-service
+  Repository: https://github.com/the-swag-coder/oan-ui-service
+  Branch: main
+  
+  To Build:
+    1. Login to Jenkins
+    2. Click "oan-ui-service"
+    3. Click "Build Now"
+
+Java Version: $(java -version 2>&1 | head -1)
+
+GitHub Webhook (Optional):
+  For automatic builds on push:
+    1. Go to repo settings: https://github.com/the-swag-coder/oan-ui-service/settings/hooks
+    2. Add webhook: http://<INSTANCE_IP>:8080/github-webhook/
+    3. Content type: application/json
+    4. Select: Just the push event
+  
+  Note: Manual builds work without webhook
+
+=============================================
+JENKINS_REPORT
+
+echo "Final deployment report completed!" | tee -a "$APP_LOG"
